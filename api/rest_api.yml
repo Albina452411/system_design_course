@@ -1,0 +1,341 @@
+openapi: 3.0.4
+info:
+  title: TravelFeed API (short)
+  version: 1.0.0
+servers:
+  - url: https://api.travelfeed.example.com
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/signup:
+    post:
+      summary: Регистрация пользователя
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignupRequest' }
+      responses:
+        '201': { description: Пользователь создан, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '409': { description: Email занят, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /auth/login:
+    post:
+      summary: Вход
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { description: Ок, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { description: Неверные данные, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /posts:
+    get:
+      summary: Список постов (общая лента/фильтры)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: placeId
+          schema: { type: string }
+        - in: query
+          name: authorId
+          schema: { type: string }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [new, top] }
+      responses:
+        '200': { description: Ок, content: { application/json: { schema: { $ref: '#/components/schemas/PostList' } } } }
+    post:
+      summary: Создать пост (фото+описание+место)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [placeId, description, photos]
+              properties:
+                placeId: { type: string }
+                description: { type: string, maxLength: 2000 }
+                photos:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: binary }
+            encoding:
+              photos:
+                contentType: image/jpeg, image/png, image/webp
+      responses:
+        '201': { description: Создано, content: { application/json: { schema: { $ref: '#/components/schemas/Post' } } } }
+        '400': { description: Ошибка валидации, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /posts/{postId}:
+    get:
+      summary: Получить пост
+      parameters:
+        - in: path
+          name: postId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Ок, content: { application/json: { schema: { $ref: '#/components/schemas/Post' } } } }
+        '404': { description: Не найден, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /posts/{postId}/reaction:
+    put:
+      summary: Поставить реакцию (LIKE/DISLIKE/NONE)
+      parameters:
+        - in: path
+          name: postId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReactionSet' }
+      responses:
+        '200': { description: Счётчики и моя реакция, content: { application/json: { schema: { $ref: '#/components/schemas/PostReactions' } } } }
+
+  /posts/{postId}/comments:
+    get:
+      summary: Список комментариев
+      parameters:
+        - in: path
+          name: postId
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: Ок, content: { application/json: { schema: { $ref: '#/components/schemas/CommentList' } } } }
+    post:
+      summary: Добавить комментарий
+      parameters:
+        - in: path
+          name: postId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentCreate' }
+      responses:
+        '201': { description: Создано, content: { application/json: { schema: { $ref: '#/components/schemas/Comment' } } } }
+
+  /users/{userId}/follow:
+    post:
+      summary: Подписаться на пользователя
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Ок }
+        '409': { description: Уже подписан, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      summary: Отписаться от пользователя
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Ок }
+
+  /places:
+    get:
+      summary: Поиск мест (в т.ч. популярные)
+      parameters:
+        - in: query
+          name: query
+          schema: { type: string }
+        - in: query
+          name: popular
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: Ок, content: { application/json: { schema: { $ref: '#/components/schemas/PlaceList' } } } }
+
+  /feed/home:
+    get:
+      summary: Домашняя лента (подписки, обратная хронология)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: Ок, content: { application/json: { schema: { $ref: '#/components/schemas/PostList' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: E400 }
+        message: { type: string, example: Ошибка валидации }
+
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, expiresIn]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer, example: 3600 }
+
+    AuthResponse:
+      type: object
+      required: [user, tokens]
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        tokens: { $ref: '#/components/schemas/TokenPair' }
+
+    SignupRequest:
+      type: object
+      required: [email, password, displayName]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        displayName: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+
+    User:
+      type: object
+      required: [id, displayName]
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        avatarUrl: { type: string, nullable: true }
+
+    Photo:
+      type: object
+      properties:
+        url: { type: string }
+
+    Place:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        popularity: { type: integer, example: 95 }
+
+    PlaceList:
+      type: object
+      required: [items, page, limit, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Place' }
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+
+    Post:
+      type: object
+      required: [id, author, place, description, createdAt]
+      properties:
+        id: { type: string }
+        author: { $ref: '#/components/schemas/User' }
+        place: { $ref: '#/components/schemas/Place' }
+        description: { type: string, maxLength: 2000 }
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/Photo' }
+        stats:
+          type: object
+          properties:
+            likes: { type: integer }
+            dislikes: { type: integer }
+            comments: { type: integer }
+        myReaction:
+          type: string
+          nullable: true
+          enum: [LIKE, DISLIKE, null]
+        createdAt: { type: string, format: date-time }
+
+    PostList:
+      type: object
+      required: [items, page, limit, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Post' }
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+
+    ReactionSet:
+      type: object
+      required: [reaction]
+      properties:
+        reaction:
+          type: string
+          enum: [LIKE, DISLIKE, NONE]
+
+    PostReactions:
+      type: object
+      properties:
+        likes: { type: integer }
+        dislikes: { type: integer }
+        myReaction:
+          type: string
+          nullable: true
+          enum: [LIKE, DISLIKE, null]
+
+    Comment:
+      type: object
+      required: [id, author, text, createdAt]
+      properties:
+        id: { type: string }
+        author: { $ref: '#/components/schemas/User' }
+        text: { type: string, maxLength: 2000 }
+        createdAt: { type: string, format: date-time }
+
+    CommentCreate:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, maxLength: 2000 }
+
+    CommentList:
+      type: object
+      required: [items, page, limit, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Comment' }
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
